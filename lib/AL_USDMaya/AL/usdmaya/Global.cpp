@@ -104,24 +104,42 @@ maya::CallbackId Global::m_fileNew;
 //----------------------------------------------------------------------------------------------------------------------
 
 //class of MObjects
-MSelectionList selected;
+static MSelectionList g_selected;
 
 static void storeSelection()
 {
-  MGlobal::displayInfo("storeSelection()");
+  TF_DEBUG(ALUSDMAYA_EVENTS).Msg("storeSelection\n")
   //set "selected" to the current selection list
-  MGlobal::getActiveSelectionList(selected);
-  for( int i=0; i<selected.length(); ++i )
+  MGlobal::getActiveSelectionList(g_selected);
+
+  /*
+  Might be better to use the getDagPath version? (and check the return status, so as to filter out non-dag node types?).
+  This would then take into account selected instances...
+  */
+  for( int i=0; i<g_selected.length(); ++i )
   {
     MObject obj;
-    selected.getDependNode(i,obj);
+    g_selected.getDependNode(i,obj);
     MFnDependencyNode fnParent(obj);
+
+    /*
+    I don't think this would be the best approach. You're probably better off simply calling MSelectionList::remove()
+    instead (since you're simply filtering the selection list, and the entire maya selection will be cleared later anyway).
+    */
     // Remove if type is AL_usdmaya_Transform
     if (fnParent.typeName() == "AL_usdmaya_Transform")
     {
       MGlobal::unselectByName(fnParent.name().asChar());
     }
+
+    /*
+    This may fail (obj might not be a dag node)
+    */
     MFnDagNode fnDagNode(obj);
+
+    /*
+    Initialising a function set and then performing a string compare for every child of every selected node seems like overkill?
+    */
     // Unselect nodes which have AL_usdmaya_ProxyShape as a child
     for( int i=0; i!=fnDagNode.childCount(); ++i ) {
       MObject obj = fnDagNode.child(i);
@@ -134,20 +152,28 @@ static void storeSelection()
     }
   }
   //Reset selection list after removal of AL proxies
-  MGlobal::getActiveSelectionList(selected);
+  /*
+  If you simply remove the offending items from selected instead, we can avoid the numerous calls to deselect the offending nodes
+  (In the short/medium term, the select/unselect mechanism for AL_usdmaya_Transform nodes isn't the most lightweight of processes sadly).
+  The entire selection list will be wiped after this function completes, which should be a little better from a performance POV.
+  */
+  MGlobal::getActiveSelectionList(g_selected);
 }
 
 static void restoreSelection()
 {
-  MGlobal::displayInfo("restoreSelection()");
+  TF_DEBUG(ALUSDMAYA_EVENTS).Msg("restoreSelection\n");
   // iterate through the list of items set by storeSelection()
-  for( int i=0; i<selected.length(); ++i )
+  MGlobal::setActiveSelectionList(g_selected)
+  /*
+  for( int i=0; i<g_selected.length(); ++i )
   {
     MObject obj;
-    selected.getDependNode(i,obj);
+    g_selected.getDependNode(i,obj);
     MFnDependencyNode fn(obj);
     MGlobal::selectByName(fn.name().asChar());
   }
+  */
 }
 
 //----------------------------------------------------------------------------------------------------------------------
